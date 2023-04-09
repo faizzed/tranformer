@@ -51,12 +51,3 @@ class Generator:
         return next_token
         # convert prediction to words
         # return ' '.join([vocab.vocab.itos_[t] for t in prediction.argmax(dim=2).squeeze().tolist()])
-
-
-model = Generator()
-sentence = 'On its day'
-for i in range(5):
-    out = model.generate(sentence)
-    sentence += ' ' + out
-
-print(sentence)
