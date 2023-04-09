@@ -6,7 +6,6 @@ import os
 from train import Train
 from data import vocab
 from train import generate_square_subsequent_mask
-from sentences import sentences
 
 config = Config()
 
@@ -20,6 +19,10 @@ class Generator:
         self.model = TransformerModel(len(vocab), config.emsize, config.nhead, config.d_hid, config.nlayers, config.dropout).to(config.device)
         if self.should_train():
             self.init_rest()
+        else:
+            print('Loaded model from checkpoint')
+            self.model.load_state_dict(torch.load(os.path.join(config.checkpoint_dir, 'best_model_params.pt')))
+            self.model.eval()
 
     def should_train(self):
         return not os.path.exists(os.path.join(config.checkpoint_dir, 'best_model_params.pt'))
@@ -36,29 +39,24 @@ class Generator:
             self.train.run_trainings()
         return
 
-    def generate(self, sentences):
-        # if we have a checkpoint, load it
-        self.model.load_state_dict(torch.load(os.path.join(config.checkpoint_dir, 'best_model_params.pt')))
-        self.model.eval()
-        print('Loaded model from checkpoint')
-        outs = []
-        for sentence in sentences:
-            out = self.generate_one(self.model, sentence)
-            outs.append({
-                'input': sentence,
-                'output': out
-            })
-
-        return outs
-
-    def generate_one(self, model, sentence):
+    def generate(self, sentence):
         sentence = torch.tensor(vocab.lookup_indices(sentence.lower().split())).unsqueeze(1).to(config.device)
-        prediction = model(sentence, generate_square_subsequent_mask(sentence.size(0)).to(config.device))
+        prediction = self.model(sentence, generate_square_subsequent_mask(sentence.size(0)).to(config.device))
+
+        temperature = 0.8
+        logits = prediction[-1, 0] / temperature
+        probabilities = torch.softmax(logits, dim=0)
+        next_token_index = torch.multinomial(probabilities, num_samples=1).item()
+        next_token = vocab.vocab.itos_[next_token_index]
+        return next_token
         # convert prediction to words
-        return ' '.join([vocab.vocab.itos_[t] for t in prediction.argmax(dim=2).squeeze().tolist()])
+        # return ' '.join([vocab.vocab.itos_[t] for t in prediction.argmax(dim=2).squeeze().tolist()])
 
 
 model = Generator()
-out = model.generate(sentences)
-for o in out:
-    print(f'{o["input"]} >> {o["output"]}')
+sentence = 'On its day'
+for i in range(5):
+    out = model.generate(sentence)
+    sentence += ' ' + out
+
+print(sentence)
