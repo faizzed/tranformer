@@ -1,14 +1,13 @@
 import math
-import os
-from tempfile import TemporaryDirectory
-from typing import Tuple
-
-import torch
 from torch import nn, Tensor
-import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from torch.utils.data import dataset
 from positional_encoding import PositionalEncoding
+from data import vocab
+
+
+def tensor_to_string(tensor: Tensor) -> str:
+    for t in tensor:
+      print( ", ".join(vocab.lookup_tokens(list(t))))
 
 
 class TransformerModel(nn.Module):
@@ -21,7 +20,7 @@ class TransformerModel(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model, dropout)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
-        self.encoder = nn.Embedding(ntoken, d_model)
+        self.embeddings = nn.Embedding(ntoken, d_model)
         self.d_model = d_model
         self.decoder = nn.Linear(d_model, ntoken)
 
@@ -29,21 +28,16 @@ class TransformerModel(nn.Module):
 
     def init_weights(self) -> None:
         initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.embeddings.weight.data.uniform_(-initrange, initrange)
         self.decoder.bias.data.zero_()
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src: Tensor, src_mask: Tensor) -> Tensor:
-        """
-        Args:
-            src: Tensor, shape [seq_len, batch_size]
-            src_mask: Tensor, shape [seq_len, seq_len]
-
-        Returns:
-            output Tensor of shape [seq_len, batch_size, ntoken]
-        """
-        src = self.encoder(src) * math.sqrt(self.d_model)
+        src = self.embeddings(src) * math.sqrt(self.d_model) # we get the src as text which is batched but embeddings assign it dimension we know nothing about
         src = self.pos_encoder(src)
+        # Its passed through multi head attention and then passed through feed forward network
+        # mha init its own K, V, Q based on random weights and then use multi heads to learn the next possible word - this is all but just random numbers at this point.
         output = self.transformer_encoder(src, src_mask)
+        # decoder is just a linear layer that takes the output of the transformer encoder and maps it to the vocab size
         output = self.decoder(output)
         return output

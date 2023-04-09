@@ -1,4 +1,3 @@
-import copy
 import time
 from torch import nn
 import torch
@@ -7,6 +6,7 @@ from config import Config
 from data import Data
 from typing import Tuple
 import math
+import os
 
 config = Config()
 
@@ -50,6 +50,7 @@ class Train():
             if seq_len != config.bptt:  # only on last batch
                 src_mask = src_mask[:seq_len, :seq_len]
             output = self.model(data, src_mask)
+            # loss between [0, inf] with 0 being perfect
             loss = self.criterion(output.view(-1, self.model.ntokens), targets)
 
             self.optimizer.zero_grad()
@@ -63,7 +64,7 @@ class Train():
                 ms_per_batch = (time.time() - start_time) * 1000 / log_interval
                 cur_loss = total_loss / log_interval
                 ppl = math.exp(cur_loss)
-                print(f'| epoch {i:3d} | {batch:5d}/{num_batches:5d} batches | '
+                print(f'| batch of: {batch:5d}/{num_batches:5d} | '
                       f'lr {lr:02.2f} | ms/batch {ms_per_batch:5.2f} | '
                       f'loss {cur_loss:5.2f} | ppl {ppl:8.2f}')
                 total_loss = 0
@@ -98,3 +99,37 @@ class Train():
                 output_flat = output.view(-1, self.model.ntokens)
                 total_loss += seq_len * self.criterion(output_flat, targets).item()
         return total_loss / (len(self.data.test_data) - 1)
+
+    # we init the model and pass it a few times through the data to get better at predicting and improving wights
+    def run_trainings(self) -> None:
+        best_val_loss = float('inf')
+        best_model_params_path = os.path.join(config.checkpoint_dir, "best_model_params.pt")
+
+        for epoch in range(1, config.epochs + 1):
+            print(f'Epoch: {epoch}')
+            epoch_start_time = time.time()
+            self.train()
+            val_loss = self.evaluate()
+            val_ppl = math.exp(val_loss)
+            elapsed = time.time() - epoch_start_time
+            print('-' * 89)
+            print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
+                  f'valid loss {val_loss:5.2f} | valid ppl {val_ppl:8.2f}')
+            print('-' * 89)
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(self.model.state_dict(), best_model_params_path)
+
+            self.scheduler.step()
+
+        self.model.load_state_dict(torch.load(best_model_params_path))  # load best model states
+        self.run_tests()
+
+    def run_tests(self):
+        test_loss = self.evaluate_test()
+        test_ppl = math.exp(test_loss)
+        print('=' * 89)
+        print(f'| End of training | test loss {test_loss:5.2f} | '
+              f'test ppl {test_ppl:8.2f}')
+        print('=' * 89)
