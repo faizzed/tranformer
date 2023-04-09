@@ -45,7 +45,7 @@ class Config:
         self.nhead = 5
         self.dropout = 0.2
         self.bptt = 35
-        self.epochs = 3
+        self.epochs = 5
 
     def data(self, split = 'none'):
         if self.TEST:
